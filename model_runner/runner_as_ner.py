@@ -43,10 +43,6 @@ BATCH_SIZE = 1
 MODEL_PATH = "bert2"
 
 
-# bert_tokenizer = bert.tokenization.FullTokenizer(
-#     vocab_file="cuvocab.txt",
-#      do_lower_case=True)
-
 with open(MODEL_PATH+ "/cubert_config.json") as conf_file:
     config_dict = json.loads(conf_file.read())
     bert_config = bert.configs.BertConfig.from_dict(config_dict)
@@ -56,7 +52,6 @@ bert_encoder = bert.bert_models.get_transformer_encoder(
 
 checkpoint = tf.train.Checkpoint(model=bert_encoder)
 checkpoint.restore(MODEL_PATH+'/bert1-1').assert_consumed()
-
 
 if ".json" in DS_PATH:
     data = pd.read_json(DS_PATH)
@@ -68,7 +63,7 @@ subword_tokenizer = text_encoder.SubwordTextEncoder(MODEL_PATH + "/cuvocab.txt")
 
 data_body1 = data['body.1']
 
-## Preprocessign arg
+## Preprocessign arg and labels
 
 data['arg_types'] = data['arg_types'].apply(eval)
 df_labels = pd.DataFrame(data['arg_types'].values.tolist())
@@ -85,6 +80,7 @@ enc.fit(all_types)
 df3 = df_labels2.apply(enc.transform)
 data['labels'] = df3.values.tolist()
 
+# Dataset generator setup
 
 def transform(code_text):
     return [2]+sum(code_to_subtokenized_sentences.code_to_cubert_sentences(
@@ -148,18 +144,13 @@ train_size = int(0.7 * DATASET_SIZE)
 val_size = int(0.15 * DATASET_SIZE)
 test_size = int(0.15 * DATASET_SIZE)
 
-full_dataset = dataset
-# full_dataset = dataset.shuffle(buffer_size=shuffle_buffer_size)
+full_dataset = dataset.shuffle(buffer_size=shuffle_buffer_size)
 train_dataset = full_dataset.take(train_size)
 test_dataset = full_dataset.skip(train_size)
 val_dataset = test_dataset.skip(val_size)
 test_dataset = test_dataset.take(test_size)
 
-# for i in full_dataset.take(1):
-#     print(i)
-
 N_CLASSES = len(enc.classes_)
-# N_CLASSES = 10
 model = tf_model.TypePredictor(bert_encoder, num_classes=N_CLASSES)
 print(tf_model.train(model, train_dataset, test_dataset, epochs=EPOCHS, scorer=precision_recall_fscore_support))
 
