@@ -42,7 +42,6 @@ SEQ_LENGTH = 512
 BATCH_SIZE = 1
 MODEL_PATH = "bert2"
 
-
 with open(MODEL_PATH+ "/cubert_config.json") as conf_file:
     config_dict = json.loads(conf_file.read())
     bert_config = bert.configs.BertConfig.from_dict(config_dict)
