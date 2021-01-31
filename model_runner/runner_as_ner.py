@@ -1,7 +1,7 @@
 import os
 import tf_model_modified as tf_model
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 
 import numpy as np
@@ -48,7 +48,7 @@ with open(MODEL_PATH+ "/cubert_config.json") as conf_file:
 
 bert_encoder = bert.bert_models.get_transformer_encoder(
     bert_config, sequence_length=SEQ_LENGTH)
-
+bert_encoder.trainable = False
 checkpoint = tf.train.Checkpoint(model=bert_encoder)
 checkpoint.restore(MODEL_PATH+'/bert1-1').assert_consumed()
 
@@ -92,34 +92,36 @@ def process_batch(data_batch):
     def process_elem(data_batch_i):
         id_list = np.zeros((SEQ_LENGTH))
         sentence_line = np.array(transform(data_batch_i['body.1'])[:SEQ_LENGTH-1]+[3])
-        for labels, l_types in zip(eval(data_batch_i['arg_names']), data_batch_i['arg_types']):
-            for label in labels: 
-                label_sub = sum([subword_tokenizer.encode_without_tokenizing(word) for word in tokenizer.tokenize(label)],[])
-                # for j in label_sub[:-1]: id_list[tuple(np.where(sentence_line == j))] = enc.transform([l_types])[0]
-                id_list[tuple(np.where(sentence_line == label_sub[0]))] = enc.transform([l_types])[0]
-        return sentence_line, id_list
+        le = len(sentence_line)
+        for label, l_types in zip(eval(data_batch_i['arg_names']), data_batch_i['arg_types']):
+            label_sub = sum([subword_tokenizer.encode_without_tokenizing(word) for word in tokenizer.tokenize(label)],[])
+            # for j in label_sub[:-1]: id_list[tuple(np.where(sentence_line == j))] = enc.transform([l_types])[0]
+            id_list[tuple(np.where(sentence_line == label_sub[0]))] = enc.transform([l_types])[0]
+        return sentence_line, id_list, le
     
     ids = [] # ner labels for sequence
     full_sentence = [] # here will be the end result of method tokenization
+    le = []
     for _,data_batch_i in data_batch.iterrows():
-        sentence_line, id_list = process_elem(data_batch_i)
+        sentence_line, id_list, length = process_elem(data_batch_i)
         full_sentence.append(sentence_line)
         ids.append(id_list)
-    return full_sentence, ids
+        le.append(length)
+    return full_sentence, ids, le
 
 
 
 def gen():
     for _, data_batch in data.groupby(np.arange(len(data))//BATCH_SIZE):
-        if len(data_batch) < BATCH_SIZE: continue # just an edge case
-        full_sentence, ids = process_batch(data_batch)
+        if len(data_batch) < BATCH_SIZE: continue # just a placeholder for edge case
+        full_sentence, ids, le = process_batch(data_batch)
         full_sentence = tf.ragged.constant(full_sentence)
         full_sentence = full_sentence.to_tensor(default_value=0, shape=[BATCH_SIZE, SEQ_LENGTH])
         ids = tf.convert_to_tensor(ids)
         yield ({'input_word_ids': full_sentence,
             'input_mask': ids > 0,
             'input_type_ids': tf.zeros_like(full_sentence),
-            'lens': SEQ_LENGTH
+            'lens': le
         },ids)
 
 
@@ -143,7 +145,8 @@ train_size = int(0.7 * DATASET_SIZE)
 val_size = int(0.15 * DATASET_SIZE)
 test_size = int(0.15 * DATASET_SIZE)
 
-full_dataset = dataset.shuffle(buffer_size=shuffle_buffer_size)
+full_dataset = dataset
+# full_dataset = dataset.shuffle(buffer_size=shuffle_buffer_size)
 train_dataset = full_dataset.take(train_size)
 test_dataset = full_dataset.skip(train_size)
 val_dataset = test_dataset.skip(val_size)

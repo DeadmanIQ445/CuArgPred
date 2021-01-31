@@ -183,7 +183,7 @@ class TypePredictor(Model):
                  crf_transitions=None, suffix_prefix_dims=50, suffix_prefix_buckets=1000):
         """
         Initialize TypePredictor. Model initializes embedding layers and then passes embeddings to TextCnn model
-        :param tok_embedder: Embedder for tokens, TODO Сюда подавать енкодер Берта
+        :param tok_embedder: Embedder for tokens, TODO мб Сюда подавать енкодер Берта
         :param graph_embedder: Embedder for graph nodes
         :param train_embeddings: whether to finetune embeddings
         :param h_sizes: hiddenlayer sizes
@@ -199,7 +199,7 @@ class TypePredictor(Model):
         super(TypePredictor, self).__init__()
 
         if h_sizes is None:
-            h_sizes = [1024]
+            h_sizes = [1024*2]
 
         assert num_classes is not None, "set num_classes"
 
@@ -276,8 +276,8 @@ class TypePredictor(Model):
         true_labels = tf.boolean_mask(labels, mask)
         argmax = tf.math.argmax(logits, axis=-1)
         estimated_labels = tf.cast(tf.boolean_mask(argmax, mask), tf.int32)
-        p, r, f1 = scorer(estimated_labels.numpy(), true_labels.numpy())[:3]
-
+        score = scorer(estimated_labels.numpy(), true_labels.numpy(), average='micro')
+        p, r, f1 = score[0], score[1], score[2]
         return p, r, f1
 
 
@@ -359,7 +359,7 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                                             extra_mask=batch[0]['input_mask']>0,
                                             scorer=scorer,
                                             finetune=finetune and e/epochs > 0.6)
-                print(f'loss = {loss}, p = {p}, r = {r}, f1 = {f1}, batch={ind}', end='\r')
+                print(f'loss = {loss}, p = {p}, r = {r}, f1 = {f1}, batch={ind}',end='\r')
                 losses.append(loss.numpy())
                 ps.append(p)
                 rs.append(r)
