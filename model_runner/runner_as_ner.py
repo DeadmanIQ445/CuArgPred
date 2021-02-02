@@ -1,7 +1,7 @@
 import os
 import tf_model_modified as tf_model
 
-# os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 
 import numpy as np
@@ -121,22 +121,21 @@ def gen():
         yield ({'input_word_ids': full_sentence,
             'input_mask': ids > 0,
             'input_type_ids': tf.zeros_like(full_sentence),
-            'lens': le
-        },ids)
+        },ids, le)
 
 
 
 dataset = tf.data.Dataset.from_generator(
         gen,
-        ({"input_word_ids": tf.int32, "input_mask": tf.int32, "input_type_ids": tf.int32, "lens": tf.int32}, tf.int32),
+        ({"input_word_ids": tf.int32, "input_mask": tf.int32, "input_type_ids": tf.int32}, tf.int32, tf.int32),
         (
             {
                 "input_word_ids": tf.TensorShape([BATCH_SIZE, SEQ_LENGTH]),
                 "input_mask": tf.TensorShape([BATCH_SIZE, SEQ_LENGTH]),
-                "input_type_ids": tf.TensorShape([BATCH_SIZE, SEQ_LENGTH]),
-                "lens": None,
+                "input_type_ids": tf.TensorShape([BATCH_SIZE, SEQ_LENGTH])
             },
             tf.TensorShape([BATCH_SIZE, SEQ_LENGTH]),
+            None
         ),
     )
 

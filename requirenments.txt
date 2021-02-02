@@ -1,2 +1,4 @@
-tensorflow=2.4.0
-tf-models-official=2.4.0
+tf-models-official==2.4.0
+regex
+tensor2tensor
+numpy==1.19.5

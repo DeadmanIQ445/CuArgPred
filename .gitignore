@@ -2,3 +2,5 @@ bert2
 data
 .vscode
 .pycache
+model_runner/__pycache__/
+model_runner/cubert_tokenizer/__pycache__/

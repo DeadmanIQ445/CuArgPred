@@ -72,7 +72,7 @@ class TextCnnLayer(Model):
         self.kernel_shape = kernel_shape
         self.out_dim = out_dim
         self.textConv = Conv1D(filters=out_dim, kernel_size=3,
-                                  activation=activation, data_format='channels_last')
+                                  activation=activation, data_format='channels_last', padding='same')
         # self.textConv = Conv1D(filters=out_dim, kernel_size=3,
         #                           activation=activation, data_format='channels_last')
 
@@ -83,7 +83,7 @@ class TextCnnLayer(Model):
     def __call__(self, x):
         # padded = tf.pad(x, self.pad_constant)
         convolve = self.textConv(x)
-        return tf.squeeze(convolve, axis=-2)
+        return tf.squeeze(convolve, axis=0)
 
 
 class TextCnn(Model):
@@ -131,9 +131,8 @@ class TextCnn(Model):
             return kernel_sizes
 
         kernel_sizes = infer_kernel_sizes(h_sizes)
-
         # self.layers_tok = [ TextCnnLayer(out_dim=h_size, kernel_shape=kernel_size, activation=activation)
-        #     for h_size, kernel_size in zip(h_sizes, kernel_sizes)]
+            # for h_size, kernel_size in zip(h_sizes, kernel_sizes)]
 
         self.layers_tok = [ ]
         # self.layers_pos = [TextCnnLayer(out_dim=h_size, kernel_shape=(cnn_win_size, pos_emb_size), activation=activation)
@@ -153,18 +152,17 @@ class TextCnn(Model):
 
     def __call__(self, embs, training=True):
 
-        temp_cnn_emb = embs[0] # shape (?, seq_len, input_size)
+        temp_cnn_emb = embs # shape (?, seq_len, input_size)
         # pass embeddings through several CNN layers
         for l in self.layers_tok:
 
             temp_cnn_emb = l(temp_cnn_emb) # shape (?, seq_len, h_size)
         # reshape before passing through a dense network
         # token_features = tf.reshape(temp_cnn_emb, shape=(-1, self.h_sizes[-1])) # shape (? * seq_len, h_size[-1])
-        token_features = Flatten()(temp_cnn_emb)
-
-        local_h2 = self.dense_1(token_features) # shape (? * seq_len, dense_size)
+        # token_features = Flatten()(temp_cnn_emb)
+        local_h2 = self.dense_1(embs) # shape (? * seq_len, dense_size)
         tag_logits = self.dense_2(local_h2) # shape (? * seq_len, num_classes)
-
+        return tag_logits
         return tf.reshape(tag_logits, (-1, self.seq_len, self.num_classes)) # reshape back, shape (?, seq_len, num_classes)
         # return tf.reshape(tag_logits, (-1, self.num_classes)) # reshape back, shape (?, seq_len, num_classes)
 
@@ -178,7 +176,7 @@ class TypePredictor(Model):
     Suffix: Embeddings for the last n characters of a token
     """
     def __init__(self, tok_embedder, num_classes, train_embeddings=False,
-                 h_sizes=None, dense_size=50,
+                 h_sizes=None, dense_size=8192,
                  seq_len=512, pos_emb_size=10, cnn_win_size=3,
                  crf_transitions=None, suffix_prefix_dims=50, suffix_prefix_buckets=1000):
         """
@@ -199,7 +197,7 @@ class TypePredictor(Model):
         super(TypePredictor, self).__init__()
 
         if h_sizes is None:
-            h_sizes = [1024*2]
+            h_sizes = [1024]
 
         assert num_classes is not None, "set num_classes"
 
@@ -276,6 +274,7 @@ class TypePredictor(Model):
         true_labels = tf.boolean_mask(labels, mask)
         argmax = tf.math.argmax(logits, axis=-1)
         estimated_labels = tf.cast(tf.boolean_mask(argmax, mask), tf.int32)
+        print(estimated_labels, true_labels)
         score = scorer(estimated_labels.numpy(), true_labels.numpy(), average='micro')
         p, r, f1 = score[0], score[1], score[2]
         return p, r, f1
@@ -313,7 +312,7 @@ def train_step_finetune(model, optimizer, token_ids, labels, lengths,
     return loss, p, r, f1
 
 # @tf.function
-def test_step(model, token_ids, prefix, suffix, graph_ids, labels, lengths, extra_mask=None, class_weights=None, scorer=None):
+def test_step(model, token_ids, labels, lengths, extra_mask=None, class_weights=None, scorer=None):
     """
 
     :param model: TypePrediction model instance
@@ -328,7 +327,7 @@ def test_step(model, token_ids, prefix, suffix, graph_ids, labels, lengths, extr
     :param scorer: scorer function, takes `pred_labels` and `true_labels` as aguments
     :return: values for loss, precision, recall and f1-score
     """
-    logits = model(token_ids, prefix, suffix, graph_ids, training=False)
+    logits = model(token_ids, training=False)
     loss = model.loss(logits, labels, lengths, class_weights=class_weights, extra_mask=extra_mask)
     p, r, f1 = model.score(logits, labels, lengths, scorer=scorer, extra_mask=extra_mask)
 
@@ -355,11 +354,11 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                 # token_ids, graph_ids, labels, class_weights, lengths = b
                 loss, p, r, f1 = train_step_finetune(model=model, optimizer=optimizer, token_ids=batch[0],
                                             labels=batch[1],
-                                            lengths=batch[0]['lens'],
+                                            lengths=batch[2],
                                             extra_mask=batch[0]['input_mask']>0,
                                             scorer=scorer,
                                             finetune=finetune and e/epochs > 0.6)
-                print(f'loss = {loss}, p = {p}, r = {r}, f1 = {f1}, batch={ind}',end='\r')
+                print(f'loss = {loss}, p = {p}, r = {r}, f1 = {f1}, batch={ind}')
                 losses.append(loss.numpy())
                 ps.append(p)
                 rs.append(r)
@@ -369,7 +368,7 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                 # token_ids, graph_ids, labels, class_weights, lengths = b
                 test_loss, test_p, test_r, test_f1 = test_step(model=model, token_ids=batch[0],
                                             labels=batch[1],
-                                            lengths=batch[0]['lens'],
+                                            lengths=batch[2],
                                             extra_mask=batch[0]['input_mask'],
                                             # class_weights=batch['class_weights'],
                                             scorer=scorer)
