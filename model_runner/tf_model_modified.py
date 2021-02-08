@@ -249,6 +249,7 @@ class TypePredictor(Model):
         a = tf.one_hot(labels, depth=logits.shape[-1])>0
         losses = tf.nn.softmax_cross_entropy_with_logits(a, logits, axis=-1)
         seq_mask = tf.sequence_mask(lengths, self.seq_len)
+        print(seq_mask, extra_mask, lengths, self.seq_len)
         if extra_mask is not None:
             seq_mask = tf.math.logical_and(seq_mask, extra_mask)
         if class_weights is None:
@@ -371,7 +372,7 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                 test_loss, test_p, test_r, test_f1 = test_step(model=model, token_ids=batch[0],
                                             labels=batch[1],
                                             lengths=batch[2],
-                                            extra_mask=batch[0]['input_mask'],
+                                            extra_mask=batch[0]['input_mask']>0,
                                             # class_weights=batch['class_weights'],
                                             scorer=scorer)
 
