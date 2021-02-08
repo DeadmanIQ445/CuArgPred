@@ -363,7 +363,7 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                 rs.append(r)
                 f1s.append(f1)
                 pr_av = lambda x: sum(x)/len(x)
-                if ind%10 == report_every:
+                if ind%report_every == 0:
                     print(f'loss = {pr_av(losses)}, p = {pr_av(ps)}, r = {pr_av(rs)}, f1 = {pr_av(f1s)}, batch={ind}')
                 
             for ind, batch in enumerate(test_batches):
