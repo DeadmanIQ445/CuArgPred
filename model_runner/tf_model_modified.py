@@ -274,7 +274,6 @@ class TypePredictor(Model):
         true_labels = tf.boolean_mask(labels, mask)
         argmax = tf.math.argmax(logits, axis=-1)
         estimated_labels = tf.cast(tf.boolean_mask(argmax, mask), tf.int32)
-        print(estimated_labels, true_labels)
         score = scorer(estimated_labels.numpy(), true_labels.numpy(), average='micro')
         p, r, f1 = score[0], score[1], score[2]
         return p, r, f1
@@ -358,12 +357,15 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                                             extra_mask=batch[0]['input_mask']>0,
                                             scorer=scorer,
                                             finetune=finetune and e/epochs > 0.6)
-                print(f'loss = {loss}, p = {p}, r = {r}, f1 = {f1}, batch={ind}')
+                
                 losses.append(loss.numpy())
                 ps.append(p)
                 rs.append(r)
                 f1s.append(f1)
-
+                pr_av = lambda x: sum(x)/len(x)
+                if ind%10 == 0:
+                    print(f'loss = {pr_av(losses)}, p = {pr_av(p)}, r = {pr_av(r)}, f1 = {pr_av(f1)}, batch={ind}')
+                
             for ind, batch in enumerate(test_batches):
                 # token_ids, graph_ids, labels, class_weights, lengths = b
                 test_loss, test_p, test_r, test_f1 = test_step(model=model, token_ids=batch[0],

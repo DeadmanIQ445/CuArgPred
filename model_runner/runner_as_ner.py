@@ -39,8 +39,10 @@ DS_PATH = "./data/_all_data.csv"
 EPOCHS = 3
 shuffle_buffer_size = 1000
 SEQ_LENGTH = 512
-BATCH_SIZE = 1
+BATCH_SIZE = 2
 MODEL_PATH = "bert2"
+FREQ_LIMIT = 50
+
 
 with open(MODEL_PATH+ "/cubert_config.json") as conf_file:
     config_dict = json.loads(conf_file.read())
@@ -71,9 +73,10 @@ df_labels = pd.DataFrame(data['arg_types'].values.tolist())
 max_label_length=10
 df_labels2=df_labels.iloc[:,0:max_label_length]
 df_labels2[pd.isnull(df_labels2)]  = 'NaN'
+df_labels2 = df_labels2.apply(lambda x: x.mask(x.map(x.value_counts())<FREQ_LIMIT, 'cslass'))
 
 enc = preprocessing.LabelEncoder()
-all_types = df_labels.apply(pd.Series).stack().values
+all_types = df_labels2.apply(pd.Series).stack().values
 enc.fit(all_types)
 
 df3 = df_labels2.apply(enc.transform)
@@ -93,10 +96,10 @@ def process_batch(data_batch):
         id_list = np.zeros((SEQ_LENGTH))
         sentence_line = np.array(transform(data_batch_i['body.1'])[:SEQ_LENGTH-1]+[3])
         le = len(sentence_line)
-        for label, l_types in zip(eval(data_batch_i['arg_names']), data_batch_i['arg_types']):
+        for label, l_types in zip(eval(data_batch_i['arg_names']), data_batch_i['labels']):
             label_sub = sum([subword_tokenizer.encode_without_tokenizing(word) for word in tokenizer.tokenize(label)],[])
             # for j in label_sub[:-1]: id_list[tuple(np.where(sentence_line == j))] = enc.transform([l_types])[0]
-            id_list[tuple(np.where(sentence_line == label_sub[0]))] = enc.transform([l_types])[0]
+            id_list[tuple(np.where(sentence_line == label_sub[0]))] = l_types
         return sentence_line, id_list, le
     
     ids = [] # ner labels for sequence
@@ -140,6 +143,7 @@ dataset = tf.data.Dataset.from_generator(
     )
 
 DATASET_SIZE = len(df3)
+DATASET_SIZE = 20
 train_size = int(0.7 * DATASET_SIZE)
 val_size = int(0.15 * DATASET_SIZE)
 test_size = int(0.15 * DATASET_SIZE)
