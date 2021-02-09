@@ -161,9 +161,10 @@ class TextCnn(Model):
         # token_features = tf.reshape(temp_cnn_emb, shape=(-1, self.h_sizes[-1])) # shape (? * seq_len, h_size[-1])
         # token_features = Flatten()(temp_cnn_emb)
         local_h2 = self.dense_1(embs) # shape (? * seq_len, dense_size)
+        local_h2 = self.dropout_1(local_h2)
         tag_logits = self.dense_2(local_h2) # shape (? * seq_len, num_classes)
         return tag_logits
-        return tf.reshape(tag_logits, (-1, self.seq_len, self.num_classes)) # reshape back, shape (?, seq_len, num_classes)
+        # return tf.reshape(tag_logits, (-1, self.seq_len, self.num_classes)) # reshape back, shape (?, seq_len, num_classes)
         # return tf.reshape(tag_logits, (-1, self.num_classes)) # reshape back, shape (?, seq_len, num_classes)
 
 
@@ -329,7 +330,6 @@ def test_step(model, token_ids, labels, lengths, extra_mask=None, class_weights=
     logits = model(token_ids, training=False)
     loss = model.loss(logits, labels, lengths, class_weights=class_weights, extra_mask=extra_mask)
     p, r, f1 = model.score(logits, labels, lengths, scorer=scorer, extra_mask=extra_mask)
-
     return loss, p, r, f1
 
 
