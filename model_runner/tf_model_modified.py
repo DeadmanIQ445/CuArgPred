@@ -160,9 +160,9 @@ class TextCnn(Model):
         # reshape before passing through a dense network
         # token_features = tf.reshape(temp_cnn_emb, shape=(-1, self.h_sizes[-1])) # shape (? * seq_len, h_size[-1])
         # token_features = Flatten()(temp_cnn_emb)
-        local_h2 = self.dense_1(embs) # shape (? * seq_len, dense_size)
-        local_h2 = self.dropout_1(local_h2)
-        tag_logits = self.dense_2(local_h2) # shape (? * seq_len, num_classes)
+        # local_h2 = self.dense_1(embs) # shape (? * seq_len, dense_size)
+        # local_h2 = self.dropout_1(local_h2)
+        tag_logits = self.dense_2(embs) # shape (? * seq_len, num_classes)
         return tag_logits
         # return tf.reshape(tag_logits, (-1, self.seq_len, self.num_classes)) # reshape back, shape (?, seq_len, num_classes)
         # return tf.reshape(tag_logits, (-1, self.num_classes)) # reshape back, shape (?, seq_len, num_classes)
@@ -357,11 +357,11 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                                             extra_mask=batch[0]['input_mask']>0,
                                             scorer=scorer,
                                             finetune=finetune and e/epochs > 0.6)
-                
-                losses.append(loss.numpy())
-                ps.append(p)
-                rs.append(r)
-                f1s.append(f1)
+                if not np.isnan(loss):
+                    losses.append(loss.numpy())
+                    ps.append(p)
+                    rs.append(r)
+                    f1s.append(f1)
                 pr_av = lambda x: sum(x)/len(x)
                 if ind%report_every == 0:
                     print(f'loss = {pr_av(losses)}, p = {pr_av(ps)}, r = {pr_av(rs)}, f1 = {pr_av(f1s)}, batch={ind}')
