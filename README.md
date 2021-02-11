@@ -7,6 +7,9 @@ The dataset is located [here](https://www.dropbox.com/s/r8cqbqhdzj89w9a/data.zip
 
 How to run:
 
-    1. Load bert model and dataset and extract them. Resulting structure should look like this ![Structure](https://i.imgur.com/F2X0J1y).
+    1. Load bert model and dataset and extract them. Resulting structure should look like this
+
+![Structure](https://i.imgur.com/F2X0J1y.png)
+
     2. Install the 'requirements.txt' file
     3. Run 'model_runner/runner_as_ner.py' script.
