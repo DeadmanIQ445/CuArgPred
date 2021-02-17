@@ -1,7 +1,7 @@
 import os
 import tf_model_modified as tf_model
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 
 import numpy as np
@@ -39,7 +39,7 @@ DS_PATH = "./data/_all_data.csv"
 EPOCHS = 3
 shuffle_buffer_size = 1000
 SEQ_LENGTH = 512
-BATCH_SIZE = 2
+BATCH_SIZE = 1
 MODEL_PATH = "bert2"
 FREQ_LIMIT = 50
 
@@ -82,6 +82,21 @@ enc.fit(all_types)
 df3 = df_labels2.apply(enc.transform)
 data['labels'] = df3.values.tolist()
 
+def train_test_by_repo(data, split=0.75):
+  train_l = []
+  test_l = []
+  c = 0
+  train_len = split*len(data)
+  for name, i in data.groupby(['repo']).count().sample(frac=1).iterrows():
+    if train_len > c:
+      train_l.append(name)
+      c+=i['author']
+    else:
+      test_l.append(name)
+  return data.loc[data['repo'].isin(train_l)], data.loc[data['repo'].isin(train_l)]
+
+train_ds, test_ds = train_test_by_repo(data)
+
 # Dataset generator setup
 
 def transform(code_text):
@@ -97,6 +112,7 @@ def process_batch(data_batch):
         sentence_line = np.array(transform(data_batch_i['body.1'])[:SEQ_LENGTH-1]+[3])
         le = len(sentence_line)
         for label, l_types in zip(eval(data_batch_i['arg_names']), data_batch_i['labels']):
+          if l_types!=240:
             label_sub = sum([subword_tokenizer.encode_without_tokenizing(word) for word in tokenizer.tokenize(label)],[])
             # for j in label_sub[:-1]: id_list[tuple(np.where(sentence_line == j))] = enc.transform([l_types])[0]
             id_list[tuple(np.where(sentence_line == label_sub[0]))] = l_types
@@ -113,47 +129,35 @@ def process_batch(data_batch):
     return full_sentence, ids, le
 
 
+def create_dataset(dataset):
+  def gen():
+      for _, data_batch in dataset.groupby(np.arange(len(dataset))//BATCH_SIZE):
+          if len(data_batch) < BATCH_SIZE: continue # just a placeholder for edge case
+          full_sentence, ids, le = process_batch(data_batch)
+          full_sentence = tf.ragged.constant(full_sentence)
+          full_sentence = full_sentence.to_tensor(default_value=0, shape=[BATCH_SIZE, SEQ_LENGTH])
+          ids = tf.convert_to_tensor(ids)
+          yield ({'input_word_ids': full_sentence,
+              'input_mask': ids > 0,
+              'input_type_ids': tf.zeros_like(full_sentence),
+          },ids, le)
 
-def gen():
-    for _, data_batch in data.groupby(np.arange(len(data))//BATCH_SIZE):
-        if len(data_batch) < BATCH_SIZE: continue # just a placeholder for edge case
-        full_sentence, ids, le = process_batch(data_batch)
-        full_sentence = tf.ragged.constant(full_sentence)
-        full_sentence = full_sentence.to_tensor(default_value=0, shape=[BATCH_SIZE, SEQ_LENGTH])
-        ids = tf.convert_to_tensor(ids)
-        yield ({'input_word_ids': full_sentence,
-            'input_mask': ids > 0,
-            'input_type_ids': tf.zeros_like(full_sentence),
-        },ids, le)
+  return tf.data.Dataset.from_generator(
+          gen,
+          ({"input_word_ids": tf.int32, "input_mask": tf.int32, "input_type_ids": tf.int32}, tf.int32, tf.int32),
+          (
+              {
+                  "input_word_ids": tf.TensorShape([BATCH_SIZE, SEQ_LENGTH]),
+                  "input_mask": tf.TensorShape([BATCH_SIZE, SEQ_LENGTH]),
+                  "input_type_ids": tf.TensorShape([BATCH_SIZE, SEQ_LENGTH])
+              },
+              tf.TensorShape([BATCH_SIZE, SEQ_LENGTH]),
+              None
+          ),
+      )
 
-
-
-dataset = tf.data.Dataset.from_generator(
-        gen,
-        ({"input_word_ids": tf.int32, "input_mask": tf.int32, "input_type_ids": tf.int32}, tf.int32, tf.int32),
-        (
-            {
-                "input_word_ids": tf.TensorShape([BATCH_SIZE, SEQ_LENGTH]),
-                "input_mask": tf.TensorShape([BATCH_SIZE, SEQ_LENGTH]),
-                "input_type_ids": tf.TensorShape([BATCH_SIZE, SEQ_LENGTH])
-            },
-            tf.TensorShape([BATCH_SIZE, SEQ_LENGTH]),
-            None
-        ),
-    )
-
-DATASET_SIZE = len(df3)
-DATASET_SIZE = 20
-train_size = int(0.7 * DATASET_SIZE)
-val_size = int(0.15 * DATASET_SIZE)
-test_size = int(0.15 * DATASET_SIZE)
-
-full_dataset = dataset
-# full_dataset = dataset.shuffle(buffer_size=shuffle_buffer_size)
-train_dataset = full_dataset.take(train_size)
-test_dataset = full_dataset.skip(train_size)
-val_dataset = test_dataset.skip(val_size)
-test_dataset = test_dataset.take(test_size)
+train_dataset = create_dataset(train_ds)
+test_dataset = create_dataset(test_ds)
 
 N_CLASSES = len(enc.classes_)
 model = tf_model.TypePredictor(bert_encoder, num_classes=N_CLASSES)
