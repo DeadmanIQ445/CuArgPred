@@ -4,7 +4,6 @@ from copy import copy
 
 import tensorflow as tf
 import tensorflow_addons as tfa
-from sklearn.metrics import top_k_accuracy_score
 from tensorflow.keras.layers import Conv1D,Dense, Conv2D, Flatten, Input, Embedding, concatenate
 from tensorflow.keras import Model
 
