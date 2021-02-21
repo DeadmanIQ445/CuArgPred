@@ -161,5 +161,5 @@ test_dataset = create_dataset(test_ds)
 
 N_CLASSES = len(enc.classes_)
 model = tf_model.TypePredictor(bert_encoder, num_classes=N_CLASSES)
-print(tf_model.train(model, train_dataset, test_dataset, epochs=EPOCHS, scorer=precision_recall_fscore_support))
+print(tf_model.train(model, train_dataset, test_dataset, epochs=EPOCHS, scorer=precision_recall_fscore_support, report_every=1))
 

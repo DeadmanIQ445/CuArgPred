@@ -4,7 +4,7 @@ from copy import copy
 
 import tensorflow as tf
 import tensorflow_addons as tfa
-
+from sklearn.metrics import top_k_accuracy_score
 from tensorflow.keras.layers import Conv1D,Dense, Conv2D, Flatten, Input, Embedding, concatenate
 from tensorflow.keras import Model
 
@@ -274,10 +274,15 @@ class TypePredictor(Model):
             mask = tf.math.logical_and(mask, extra_mask)
         true_labels = tf.boolean_mask(labels, mask)
         argmax = tf.math.argmax(logits, axis=-1)
+        masked_pred = tf.boolean_mask(logits, mask)
         estimated_labels = tf.cast(tf.boolean_mask(argmax, mask), tf.int32)
         score = scorer(estimated_labels.numpy(), true_labels.numpy(), average='micro')
+        top_k = tf.nn.top_k(masked_pred, k=5).indices
+        t_k_score = []
+        for i in range(top_k.shape[0]):
+            t_k_score.append(1  if true_labels[i] in top_k[i] else 0)
         p, r, f1 = score[0], score[1], score[2]
-        return p, r, f1
+        return p, r, f1 , sum(t_k_score)/len(t_k_score) if len(t_k_score) > 0 else 0.0
 
 
 def train_step_finetune(model, optimizer, token_ids, labels, lengths,
@@ -301,7 +306,7 @@ def train_step_finetune(model, optimizer, token_ids, labels, lengths,
     with tf.GradientTape() as tape:
         logits = model(token_ids, training=True) #TODO
         loss = model.loss(logits, labels, lengths, class_weights=class_weights, extra_mask=extra_mask)
-        p, r, f1 = model.score(logits, labels, lengths, scorer=scorer, extra_mask=extra_mask)
+        p, r, f1, t_k_score = model.score(logits, labels, lengths, scorer=scorer, extra_mask=extra_mask)
         gradients = tape.gradient(loss, model.trainable_variables)
         if not finetune:
             # do not update embeddings
@@ -309,7 +314,7 @@ def train_step_finetune(model, optimizer, token_ids, labels, lengths,
             optimizer.apply_gradients((g, v) for g, v in zip(gradients, model.trainable_variables) if not v.name.startswith("default_embedder"))
         else:
             optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-    return loss, p, r, f1
+    return loss, p, r, f1, t_k_score
 
 # @tf.function
 def test_step(model, token_ids, labels, lengths, extra_mask=None, class_weights=None, scorer=None):
@@ -329,8 +334,8 @@ def test_step(model, token_ids, labels, lengths, extra_mask=None, class_weights=
     """
     logits = model(token_ids, training=False)
     loss = model.loss(logits, labels, lengths, class_weights=class_weights, extra_mask=extra_mask)
-    p, r, f1 = model.score(logits, labels, lengths, scorer=scorer, extra_mask=extra_mask)
-    return loss, p, r, f1
+    p, r, f1, t_k_score = model.score(logits, labels, lengths, scorer=scorer, extra_mask=extra_mask)
+    return loss, p, r, f1, t_k_score
 
 
 def train(model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01, learning_rate_decay=1., finetune=False):
@@ -348,10 +353,11 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
             losses = []
             ps = []
             rs = []
-            f1s = []            
+            f1s = []      
+            top_ks = []      
             for ind, batch in enumerate(train_batches):
                 # token_ids, graph_ids, labels, class_weights, lengths = b
-                loss, p, r, f1 = train_step_finetune(model=model, optimizer=optimizer, token_ids=batch[0],
+                loss, p, r, f1, t_k_score = train_step_finetune(model=model, optimizer=optimizer, token_ids=batch[0],
                                             labels=batch[1],
                                             lengths=batch[2],
                                             extra_mask=batch[0]['input_mask']>0,
@@ -362,9 +368,10 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                     ps.append(p)
                     rs.append(r)
                     f1s.append(f1)
+                    top_ks.append(t_k_score)
                 pr_av = lambda x: sum(x)/len(x)
                 if ind%report_every == 0:
-                    print(f'loss = {pr_av(losses)}, p = {pr_av(ps)}, r = {pr_av(rs)}, f1 = {pr_av(f1s)}, batch={ind}')
+                    print(f'loss = {pr_av(losses)}, acc = {pr_av(ps)}, top 5 = {pr_av(top_ks)}, batch={ind}')
                 
             for ind, batch in enumerate(test_batches):
                 # token_ids, graph_ids, labels, class_weights, lengths = b
