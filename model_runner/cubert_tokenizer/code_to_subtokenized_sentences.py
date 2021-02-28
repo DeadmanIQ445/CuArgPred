@@ -24,7 +24,7 @@ from absl import flags
 from absl import logging
 from tensor2tensor.data_generators import text_encoder
 
-from cubert_tokenizer import cubert_tokenizer
+# from cubert_tokenizer import cubert_tokenizer
 from cubert_tokenizer import tokenizer_registry
 from cubert_tokenizer import unified_tokenizer
 
@@ -47,96 +47,107 @@ flags.DEFINE_enum_class(
 
 
 def code_to_cubert_sentences(
-    code,
-    initial_tokenizer,
-    subword_tokenizer,
+        code,
+        initial_tokenizer,
+        subword_tokenizer,
+        labels
 ):
-  """Tokenizes code into a list of CuBERT sentences.
+    """Tokenizes code into a list of CuBERT sentences.
 
-  Args:
-    code: The source code to tokenize. This must be a parseable unit of code,
-      meaning it represents an AST (or a complete subtree of an AST). For
-      example, there should be no unmatched parentheses, and `if` and other
-      blocks of code must have bodies.
-    initial_tokenizer: The first tokenizer that creates sentences, probably a
-      cubert_tokenizer.CuBertTokenizer.
-    subword_tokenizer: A second tokenizer that splits tokens of the
-      `initial_tokenizer` into subtokens.
+        Args:
+            code: The source code to tokenize. This must be a parseable unit of code,
+                meaning it represents an AST (or a complete subtree of an AST). For
+                example, there should be no unmatched parentheses, and `if` and other
+                blocks of code must have bodies.
+            initial_tokenizer: The first tokenizer that creates sentences, probably a
+                cubert_tokenizer.CuBertTokenizer.
+            subword_tokenizer: A second tokenizer that splits tokens of the
+                `initial_tokenizer` into subtokens.
+            labels: List of Arguments.
 
-  Returns:
-    A list of sentences.
-  """
-  tokens = initial_tokenizer.tokenize(code)[:-1]  # type: List[Text]
-  logging.vlog(5, 'Code >>>%s<<< is tokenized into >>>%s<<<.', code, tokens)
+      Returns:
+        A list of sentences.
+      """
+    tokens, labeled = initial_tokenizer.tokenize(code, labels)  # type: List[Text]
+    tokens = tokens[:-1]  # removing EOS
+    logging.vlog(5, 'Code >>>%s<<< is tokenized into >>>%s<<<.', code, tokens)
+    # This will split the list into sublists of non-NEWLINE tokens (key is
+    # False) and NEWLINE tokens (key is True).
+    groups_by_endtoken = itertools.groupby(
+        tokens, key=lambda x: x == unified_tokenizer.NEWLINE)
+    # This will keep only the sublists that aren't just [NEWLINE]*, i.e., those
+    # that have key False. We call these raw_sentences, because they're not
+    # terminated.
+    raw_sentences = [list(v) for k, v in groups_by_endtoken if not k
+                     ]  # type: List[List[Text]]
+    # Now we append a NEWLINE token after all sentences. Note that our tokenizer
+    # drops any trailing \n's before tokenizing, but for the purpose of forming
+    # properly terminated sentences, we always end sentences in a NEWLINE token.
+    sentences = [s + [unified_tokenizer.NEWLINE] for s in raw_sentences
+                 ]  # type: List[List[Text]]
 
-  # This will split the list into sublists of non-NEWLINE tokens (key is
-  # False) and NEWLINE tokens (key is True).
-  groups_by_endtoken = itertools.groupby(
-      tokens, key=lambda x: x == unified_tokenizer.NEWLINE)
-  # This will keep only the sublists that aren't just [NEWLINE]*, i.e., those
-  # that have key False. We call these raw_sentences, because they're not
-  # terminated.
-  raw_sentences = [list(v) for k, v in groups_by_endtoken if not k
-                  ]  # type: List[List[Text]]
-  # Now we append a NEWLINE token after all sentences. Note that our tokenizer
-  # drops any trailing \n's before tokenizing, but for the purpose of forming
-  # properly terminated sentences, we always end sentences in a NEWLINE token.
-  sentences = [s + [unified_tokenizer.NEWLINE] for s in raw_sentences
-              ]  # type: List[List[Text]]
+    logging.vlog(5, 'Tokens are split into sentences: >>>%s<<<.',
+                 sentences)
 
+    # Now we have to encode tokens using the subword text encoder, expanding the
+    # sentences.
+    subtokenized_sentences = []  # type: List[List[int]]
+    labeled_subtok = []
+    for token, label in zip(tokens, labeled):
+        encoded_tokens = subword_tokenizer.encode_without_tokenizing(token)
+        subtokenized_sentences.append(encoded_tokens)
+        labeled_subtok.append([label]*len(encoded_tokens))
 
-  logging.vlog(5, 'Tokens are split into sentences: >>>%s<<<.',
-               sentences)
+    # for sentence in sentences:
+    #     encoded_tokens = [subword_tokenizer.encode_without_tokenizing(t)
+    #                       for t in sentence]  # type: List[List[int]]
+    #     logging.vlog(5, 'Sentence encoded into >>>%s<<<.', encoded_tokens)
+    #     flattened_encodings = sum(encoded_tokens, [])  # type: List[int]
+    #     logging.vlog(5, 'Flattened into >>>%s<<<.', flattened_encodings)
+    #     # decoded_tokens = subword_tokenizer.decode_list(
+    #     # flattened_encodings)  # type: List[Text]
+    #     # logging.vlog(5, 'Sentence re-decoded into >>>%s<<<.', decoded_tokens)
+    #
+    #     # subtokenized_sentences.append(decoded_tokens)
+    #     subtokenized_sentences.append(flattened_encodings)
+    logging.vlog(5, 'Sentences are further subtokenized: >>>%s<<<.',
+                 subtokenized_sentences)
 
-  # Now we have to encode tokens using the subword text encoder, expanding the
-  # sentences.
-  subtokenized_sentences = []  # type: List[List[Text]]
-  for sentence in sentences:
-    encoded_tokens = [subword_tokenizer.encode_without_tokenizing(t)
-                      for t in sentence]  # type: List[List[int]]
-    logging.vlog(5, 'Sentence encoded into >>>%s<<<.', encoded_tokens)
-    flattened_encodings = sum(encoded_tokens, [])  # type: List[int]
-    logging.vlog(5, 'Flattened into >>>%s<<<.', flattened_encodings)
-    # decoded_tokens = subword_tokenizer.decode_list(
-        # flattened_encodings)  # type: List[Text]
-    # logging.vlog(5, 'Sentence re-decoded into >>>%s<<<.', decoded_tokens)
-
-    # subtokenized_sentences.append(decoded_tokens)
-    subtokenized_sentences.append(flattened_encodings)
-  logging.vlog(5, 'Sentences are further subtokenized: >>>%s<<<.',
-               subtokenized_sentences)
-  return subtokenized_sentences
+    flattened_subtok = sum(subtokenized_sentences, [])
+    labeled_subtok_flat = sum(labeled_subtok, [])
+    return flattened_subtok, labeled_subtok_flat
 
 
 def main(argv):
-  if len(argv) > 1:
-    raise app.UsageError('Too many command-line arguments.')
+    if len(argv) > 1:
+        raise app.UsageError('Too many command-line arguments.')
 
-  # The value of the `TokenizerEnum` is a `CuBertTokenizer` subclass.
-  tokenizer = FLAGS.tokenizer.value()
-  subword_tokenizer = text_encoder.SubwordTextEncoder(FLAGS.vocabulary_filepath)
+    # The value of the `TokenizerEnum` is a `CuBertTokenizer` subclass.
+    tokenizer = FLAGS.tokenizer.value()
+    subword_tokenizer = text_encoder.SubwordTextEncoder(FLAGS.vocabulary_filepath)
 
-  with open(FLAGS.input_filepath, 'r') as input_file:
-    code = input_file.read()
+    with open(FLAGS.input_filepath, 'r') as input_file:
+        code = input_file.read()
+        print('#' * 80)
+        print('Original Code')
+        print('#' * 80)
+        print(code)
+
+    subtokenized_sentences = code_to_cubert_sentences(
+        code=code,
+        initial_tokenizer=tokenizer,
+        subword_tokenizer=subword_tokenizer)
     print('#' * 80)
-    print('Original Code')
+    print('CuBERT Sentences')
     print('#' * 80)
-    print(code)
+    print(subtokenized_sentences)
 
-  subtokenized_sentences = code_to_cubert_sentences(
-      code=code,
-      initial_tokenizer=tokenizer,
-      subword_tokenizer=subword_tokenizer)
-  print('#' * 80)
-  print('CuBERT Sentences')
-  print('#' * 80)
-  print(subtokenized_sentences)
+    with open(FLAGS.output_filepath, 'wt') as output_file:
+        output_file.write(json.dumps(subtokenized_sentences, indent=2))
 
-  with open(FLAGS.output_filepath, 'wt') as output_file:
-    output_file.write(json.dumps(subtokenized_sentences, indent=2))
 
 if __name__ == '__main__':
-  flags.mark_flag_as_required('vocabulary_filepath')
-  flags.mark_flag_as_required('input_filepath')
-  flags.mark_flag_as_required('output_filepath')
-  app.run(main)
+    flags.mark_flag_as_required('vocabulary_filepath')
+    flags.mark_flag_as_required('input_filepath')
+    flags.mark_flag_as_required('output_filepath')
+    app.run(main)
