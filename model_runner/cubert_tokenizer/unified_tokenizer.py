@@ -229,6 +229,7 @@ def code_to_tokens(code):
   """
     token_tuples = list(tokenize.generate_tokens(
         six.StringIO(code.rstrip()).readline))
+
     logging.vlog(5, 'Code `%s` was tokenized to token tuples `%s`.', code,
                  token_tuples)
 
@@ -252,8 +253,14 @@ def code_to_tokens(code):
                 logging.vlog(5, 'Tokenization for `%s` was sanitized to remove '
                                 'trailing newline after DEDENTs. Now token tuples are '
                                 '`%s`.', code, token_tuples)
-
-    return token_tuples
+    c = 0
+    l = []
+    for token in token_tuples:
+        token = token._replace(start=c)
+        c += token.end[1]
+        token = token._replace(end=c)
+        l.append(token)
+    return l
 
 
 def code_to_tokens_simple_lossless(code):
@@ -709,7 +716,7 @@ def flatten_subtoken_lists(
         raise ValueError('Received empty input %r but expected it to be non '
                          'empty' % (subtoken_lists,))
     spellings = (t.spellings for t in subtoken_lists)
-    labeled = [[t.label]*len(t.spellings) for t in subtoken_lists]
+    labeled = [[t.label] * len(t.spellings) for t in subtoken_lists]
     subtokens = sum(spellings, [])
     labeled = sum(labeled, [])
     return subtokens, labeled

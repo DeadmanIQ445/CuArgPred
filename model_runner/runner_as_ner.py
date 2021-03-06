@@ -3,20 +3,15 @@ import tf_model_modified as tf_model
 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
-
 import numpy as np
-
 import tensorflow as tf
-
 from sklearn.metrics import precision_recall_fscore_support
 from official.nlp import bert
 from cubert_tokenizer import python_tokenizer, code_to_subtokenized_sentences
-
 import official.nlp.bert.bert_models
 import official.nlp.bert.configs
 from tensor2tensor.data_generators import text_encoder
 import pandas as pd
-
 import json
 from sklearn import preprocessing
 
@@ -41,12 +36,10 @@ bert_encoder.trainable = False
 checkpoint = tf.train.Checkpoint(model=bert_encoder)
 checkpoint.restore(MODEL_PATH + '/bert1-1').assert_consumed()
 
-if ".json" in DS_PATH:
-    data = pd.read_json(DS_PATH)
-else:
-    data = pd.read_csv(DS_PATH)
+data = pd.read_csv(DS_PATH)
 
 tokenizer = python_tokenizer.PythonTokenizer()
+# This tokenizer is not used for splitting but only for encoding, PythonTokenizer does subword tokenization
 subword_tokenizer = text_encoder.SubwordTextEncoder(MODEL_PATH + "/cuvocab.txt")
 
 CLS = subword_tokenizer.encode_without_tokenizing("[CLS]")
@@ -54,7 +47,7 @@ SEP = subword_tokenizer.encode_without_tokenizing("[SEP]")
 
 data['arg_types'] = data['arg_types'].apply(eval)
 
-# Preprocessign arg and labels
+# Preprocessing arg and labels
 
 df_labels = pd.DataFrame(data['arg_types'].values.tolist())
 
@@ -96,7 +89,6 @@ def transform(code_text, labels):
         initial_tokenizer=tokenizer,
         subword_tokenizer=subword_tokenizer, labels=labels)
     return CLS + code_encoded, [0] + respective_labels
-
 
 
 def process_batch(data_batch):

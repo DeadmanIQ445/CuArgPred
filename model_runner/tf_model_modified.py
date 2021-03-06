@@ -4,7 +4,7 @@ from copy import copy
 
 import tensorflow as tf
 import tensorflow_addons as tfa
-from tensorflow.keras.layers import Conv1D,Dense, Conv2D, Flatten, Input, Embedding, concatenate
+from tensorflow.keras.layers import Conv1D, Dense, Conv2D, Flatten, Input, Embedding, concatenate
 from tensorflow.keras import Model
 
 tf.get_logger().setLevel('WARNING')
@@ -14,23 +14,23 @@ class DefaultEmbedding(Model):
     """
     Creates an embedder that provides the default value for the index -1. The default value is a zero-vector
     """
+
     def __init__(self, init_vectors=None, shape=None, trainable=True):
         super(DefaultEmbedding, self).__init__()
 
         if init_vectors is not None:
             self.embs = tf.Variable(init_vectors, dtype=tf.float32,
-                           trainable=trainable, name="default_embedder_var")
+                                    trainable=trainable, name="default_embedder_var")
             shape = init_vectors.shape
         else:
             # TODO
             # the default value is no longer constant. need to replace this with a standard embedder
             self.embs = tf.Variable(tf.random.uniform(shape=(shape[0], shape[1]), dtype=tf.float32),
-                               name="default_embedder_pad")
+                                    name="default_embedder_pad")
         # self.pad = tf.zeros(shape=(1, init_vectors.shape[1]), name="default_embedder_pad")
         # self.pad = tf.random.uniform(shape=(1, init_vectors.shape[1]), name="default_embedder_pad")
         self.pad = tf.Variable(tf.random.uniform(shape=(1, shape[1]), dtype=tf.float32),
                                name="default_embedder_pad")
-
 
     def __call__(self, ids):
         emb_matr = tf.concat([self.embs, self.pad], axis=0)
@@ -52,11 +52,11 @@ class PositionalEncoding(Model):
         position_splt = positions[:seq_len]
         position_splt.reverse()
         self.position_encoding = tf.constant(toeplitz(position_splt, positions[seq_len:]),
-                                        dtype=tf.int32,
-                                        name="position_encoding")
+                                             dtype=tf.int32,
+                                             name="position_encoding")
         self.position_embedding = tf.Variable(tf.random.uniform(shape=(seq_len * 2, pos_emb_size), dtype=tf.float32),
-                               name="position_embedding")
-        
+                                              name="position_embedding")
+
     def __call__(self):
         return tf.nn.embedding_lookup(self.position_embedding, self.position_encoding, name="position_lookup")
 
@@ -65,13 +65,14 @@ class TextCnnLayer(Model):
     """
 
     """
+
     def __init__(self, out_dim, kernel_shape, activation=None):
         super(TextCnnLayer, self).__init__()
 
         self.kernel_shape = kernel_shape
         self.out_dim = out_dim
         self.textConv = Conv1D(filters=out_dim, kernel_size=3,
-                                  activation=activation, data_format='channels_last', padding='same')
+                               activation=activation, data_format='channels_last', padding='same')
         # self.textConv = Conv1D(filters=out_dim, kernel_size=3,
         #                           activation=activation, data_format='channels_last')
 
@@ -94,6 +95,7 @@ class TextCnn(Model):
     pass representation for all tokens through a dense network ->
     classify each token
     """
+
     def __init__(self, input_size, h_sizes, seq_len,
                  pos_emb_size, cnn_win_size, dense_size, num_classes,
                  activation=None, dense_activation=None, drop_rate=0.2):
@@ -124,16 +126,16 @@ class TextCnn(Model):
             :return:
             """
             kernel_sizes = copy(h_sizes)
-            kernel_sizes.pop(-1) # pop last because it is the output of the last CNN layer
-            kernel_sizes.insert(0, input_size) # the first kernel size should be (cnn_win_size, input_size)
+            kernel_sizes.pop(-1)  # pop last because it is the output of the last CNN layer
+            kernel_sizes.insert(0, input_size)  # the first kernel size should be (cnn_win_size, input_size)
             kernel_sizes = [(cnn_win_size, ks) for ks in kernel_sizes]
             return kernel_sizes
 
         kernel_sizes = infer_kernel_sizes(h_sizes)
         # self.layers_tok = [ TextCnnLayer(out_dim=h_size, kernel_shape=kernel_size, activation=activation)
-            # for h_size, kernel_size in zip(h_sizes, kernel_sizes)]
+        # for h_size, kernel_size in zip(h_sizes, kernel_sizes)]
 
-        self.layers_tok = [ ]
+        self.layers_tok = []
         # self.layers_pos = [TextCnnLayer(out_dim=h_size, kernel_shape=(cnn_win_size, pos_emb_size), activation=activation)
         #                for h_size, _ in zip(h_sizes, kernel_sizes)]
 
@@ -146,22 +148,21 @@ class TextCnn(Model):
 
         self.dense_1 = Dense(dense_size, activation=dense_activation)
         self.dropout_1 = tf.keras.layers.Dropout(rate=drop_rate)
-        self.dense_2 = Dense(num_classes, activation=None) # logits
+        self.dense_2 = Dense(num_classes, activation=None)  # logits
         self.dropout_2 = tf.keras.layers.Dropout(rate=drop_rate)
 
     def __call__(self, embs, training=True):
 
-        temp_cnn_emb = embs # shape (?, seq_len, input_size)
+        temp_cnn_emb = embs  # shape (?, seq_len, input_size)
         # pass embeddings through several CNN layers
         for l in self.layers_tok:
-
-            temp_cnn_emb = l(temp_cnn_emb) # shape (?, seq_len, h_size)
+            temp_cnn_emb = l(temp_cnn_emb)  # shape (?, seq_len, h_size)
         # reshape before passing through a dense network
         # token_features = tf.reshape(temp_cnn_emb, shape=(-1, self.h_sizes[-1])) # shape (? * seq_len, h_size[-1])
         # token_features = Flatten()(temp_cnn_emb)
         # local_h2 = self.dense_1(embs) # shape (? * seq_len, dense_size)
         # local_h2 = self.dropout_1(local_h2)
-        tag_logits = self.dense_2(embs) # shape (? * seq_len, num_classes)
+        tag_logits = self.dense_2(embs)  # shape (? * seq_len, num_classes)
         return tag_logits
         # return tf.reshape(tag_logits, (-1, self.seq_len, self.num_classes)) # reshape back, shape (?, seq_len, num_classes)
         # return tf.reshape(tag_logits, (-1, self.num_classes)) # reshape back, shape (?, seq_len, num_classes)
@@ -175,6 +176,7 @@ class TypePredictor(Model):
     Prefix: Embeddings for the first n characters of a token
     Suffix: Embeddings for the last n characters of a token
     """
+
     def __init__(self, tok_embedder, num_classes, train_embeddings=False,
                  h_sizes=None, dense_size=8192,
                  seq_len=512, pos_emb_size=10, cnn_win_size=3,
@@ -219,7 +221,6 @@ class TypePredictor(Model):
 
         self.crf_transition_params = None
 
-
     def __call__(self, token_ids, training=True):
         """
         Inference
@@ -234,7 +235,6 @@ class TypePredictor(Model):
         logits = self.text_cnn(tok_emb, training=training)
         return logits
 
-
     def loss(self, logits, labels, lengths, class_weights=None, extra_mask=None):
         """
         Compute cross-entropy loss for each meaningful tokens. Mask padded tokens.
@@ -245,8 +245,8 @@ class TypePredictor(Model):
         :param extra_mask: mask for hiding some of the token labels, not counting them towards the loss, shape (?, seq_len)
         :return: average cross-entropy loss
         """
-        
-        a = tf.one_hot(labels, depth=logits.shape[-1])>0
+
+        a = tf.one_hot(labels, depth=logits.shape[-1]) > 0
         losses = tf.nn.softmax_cross_entropy_with_logits(a, logits, axis=-1)
         seq_mask = tf.sequence_mask(lengths, self.seq_len)
         if extra_mask is not None:
@@ -279,13 +279,13 @@ class TypePredictor(Model):
         top_k = tf.nn.top_k(masked_pred, k=5).indices
         t_k_score = []
         for i in range(top_k.shape[0]):
-            t_k_score.append(1  if true_labels[i] in top_k[i] else 0)
+            t_k_score.append(1 if true_labels[i] in top_k[i] else 0)
         p, r, f1 = score[0], score[1], score[2]
-        return p, r, f1 , sum(t_k_score)/len(t_k_score) if len(t_k_score) > 0 else 0.0
+        return p, r, f1, sum(t_k_score) / len(t_k_score) if len(t_k_score) > 0 else 0.0
 
 
 def train_step_finetune(model, optimizer, token_ids, labels, lengths,
-                   extra_mask=None, class_weights=None, scorer=None, finetune=False):
+                        extra_mask=None, class_weights=None, scorer=None, finetune=False):
     """
     Make a train step
     :param model: TypePrediction model instance
@@ -303,17 +303,19 @@ def train_step_finetune(model, optimizer, token_ids, labels, lengths,
     :return: values for loss, precision, recall and f1-score
     """
     with tf.GradientTape() as tape:
-        logits = model(token_ids, training=True) #TODO
+        logits = model(token_ids, training=True)  # TODO
         loss = model.loss(logits, labels, lengths, class_weights=class_weights, extra_mask=extra_mask)
         p, r, f1, t_k_score = model.score(logits, labels, lengths, scorer=scorer, extra_mask=extra_mask)
         gradients = tape.gradient(loss, model.trainable_variables)
         if not finetune:
             # do not update embeddings
             # pop embeddings related to embedding matrices
-            optimizer.apply_gradients((g, v) for g, v in zip(gradients, model.trainable_variables) if not v.name.startswith("default_embedder"))
+            optimizer.apply_gradients((g, v) for g, v in zip(gradients, model.trainable_variables) if
+                                      not v.name.startswith("default_embedder"))
         else:
             optimizer.apply_gradients(zip(gradients, model.trainable_variables))
     return loss, p, r, f1, t_k_score
+
 
 # @tf.function
 def test_step(model, token_ids, labels, lengths, extra_mask=None, class_weights=None, scorer=None):
@@ -337,8 +339,8 @@ def test_step(model, token_ids, labels, lengths, extra_mask=None, class_weights=
     return loss, p, r, f1, t_k_score
 
 
-def train(model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01, learning_rate_decay=1., finetune=False):
-
+def train(model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01,
+          learning_rate_decay=1., finetune=False, decrease_every=10000):
     lr = tf.Variable(learning_rate, trainable=False)
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
 
@@ -346,43 +348,47 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
     test_losses = []
     train_f1s = []
     test_f1s = []
-
+    def pr_av(x): return sum(x) / len(x)
     try:
         for e in range(epochs):
             losses = []
             ps = []
             rs = []
-            f1s = []      
-            top_ks = []      
+            f1s = []
+            top_ks = []
             for ind, batch in enumerate(train_batches):
                 # token_ids, graph_ids, labels, class_weights, lengths = b
                 loss, p, r, f1, t_k_score = train_step_finetune(model=model, optimizer=optimizer, token_ids=batch[0],
-                                            labels=batch[1],
-                                            lengths=batch[2],
-                                            extra_mask=batch[0]['input_mask']>0,
-                                            scorer=scorer,
-                                            finetune=finetune and e/epochs > 0.6)
+                                                                labels=batch[1],
+                                                                lengths=batch[2],
+                                                                extra_mask=batch[0]['input_mask'] > 0,
+                                                                scorer=scorer,
+                                                                finetune=finetune and e / epochs > 0.6)
                 if not np.isnan(loss):
                     losses.append(loss.numpy())
                     ps.append(p)
                     rs.append(r)
                     f1s.append(f1)
                     top_ks.append(t_k_score)
-                pr_av = lambda x: sum(x)/len(x)
-                if ind%report_every == 0:
+
+                if ind % report_every == 0 and ind > 0:
                     print(f'loss = {pr_av(losses)}, acc = {pr_av(ps)}, top 5 = {pr_av(top_ks)}, batch={ind}')
-                
+
+                if ind % decrease_every == 0 and ind > 0:
+                    lr.assign(lr * learning_rate_decay)
+
             for ind, batch in enumerate(test_batches):
                 # token_ids, graph_ids, labels, class_weights, lengths = b
-                test_loss, test_p, test_r, test_f1 = test_step(model=model, token_ids=batch[0],
-                                            labels=batch[1],
-                                            lengths=batch[2],
-                                            extra_mask=batch[0]['input_mask']>0,
-                                            # class_weights=batch['class_weights'],
-                                            scorer=scorer)
+                test_loss, test_p, test_r, test_f1, test_top_ks = test_step(model=model, token_ids=batch[0],
+                                                                            labels=batch[1],
+                                                                            lengths=batch[2],
+                                                                            extra_mask=batch[0]['input_mask'] > 0,
+                                                                            # class_weights=batch['class_weights'],
+                                                                            scorer=scorer)
 
-            print(f"Epoch: {e}, Train Loss: {sum(losses) / len(losses)}, Train P: {sum(ps) / len(ps)}, Train R: {sum(rs) / len(rs)}, Train F1: {sum(f1s) / len(f1s)}, "
-                  f"Test loss: {test_loss}, Test P: {test_p}, Test R: {test_r}, Test F1: {test_f1}")
+            print(
+                f"Epoch: {e}, Train Loss: {pr_av(losses)}, Train P: {pr_av(ps)}, Train R: {pr_av(rs)}, Train F1: {pr_av(f1s)}, "
+                f"Test loss: {test_loss}, Test P: {test_p}, Test R: {test_r}, Test F1: {test_f1}, Test Top 5: {test_top_ks}")
 
             train_losses.append(float(sum(losses) / len(losses)))
             train_f1s.append(float(sum(f1s) / len(f1s)))
