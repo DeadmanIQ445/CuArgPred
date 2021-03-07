@@ -339,8 +339,8 @@ def test_step(model, token_ids, labels, lengths, extra_mask=None, class_weights=
     return loss, p, r, f1, t_k_score
 
 
-def train(model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.01,
-          learning_rate_decay=1., finetune=False, decrease_every=10000):
+def train(model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.001,
+          learning_rate_decay=1., finetune=False, decrease_every=None, lower_bound=1e-5):
     lr = tf.Variable(learning_rate, trainable=False)
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
 
@@ -374,7 +374,7 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                 if ind % report_every == 0 and ind > 0:
                     print(f'loss = {pr_av(losses)}, acc = {pr_av(ps)}, top 5 = {pr_av(top_ks)}, batch={ind}')
 
-                if ind % decrease_every == 0 and ind > 0:
+                if not decrease_every is None and ind % decrease_every == 0 and ind > 0 and lr>lower_bound:
                     lr.assign(lr * learning_rate_decay)
 
             for ind, batch in enumerate(test_batches):
