@@ -348,7 +348,7 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
     test_losses = []
     train_f1s = []
     test_f1s = []
-    def pr_av(x): return sum(x) / len(x)
+    def pr_av(x): return sum(x) / len(x) if len(x)!=0 else 0
     try:
         for e in range(epochs):
             losses = []

@@ -97,7 +97,7 @@ def code_to_cubert_sentences(
         encoded_tokens = subword_tokenizer.encode_without_tokenizing(token)
         subtokenized_sentences.append(encoded_tokens)
         labeled_subtok.append([label]*len(encoded_tokens))
-
+        
     # for sentence in sentences:
     #     encoded_tokens = [subword_tokenizer.encode_without_tokenizing(t)
     #                       for t in sentence]  # type: List[List[int]]

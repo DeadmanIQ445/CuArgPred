@@ -98,7 +98,6 @@ class PythonTokenizer(cubert_tokenizer.CuBertTokenizer):
             )
 
         agnostic_tokens: List[unified_tokenizer.AbstractToken] = []
-
         for spelling, kind, first_line in token_pairs:
             adjusted_spelling = spelling
             if kind == tokenize.NAME:
