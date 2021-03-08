@@ -98,8 +98,11 @@ class PythonTokenizer(cubert_tokenizer.CuBertTokenizer):
             )
 
         agnostic_tokens: List[unified_tokenizer.AbstractToken] = []
+        flag = True
         for spelling, kind, first_line in token_pairs:
             adjusted_spelling = spelling
+            if spelling == ':' and agnostic_tokens[-1].spelling == ')':
+                flag = False
             if kind == tokenize.NAME:
                 # Disambiguate identifiers from keywords.
                 if keyword.iskeyword(spelling):
@@ -138,7 +141,7 @@ class PythonTokenizer(cubert_tokenizer.CuBertTokenizer):
                     spelling=adjusted_spelling, kind=token_kind,
                     # TODO(maniatis): Eventually, we'll store token positioning info
                     # in metadata.
-                    metadata=unified_tokenizer.TokenMetadata(), label=labels.get(spelling, 0) if first_line else 0))
+                    metadata=unified_tokenizer.TokenMetadata(), label=labels.get(spelling, 0) if flag else 0))
         return agnostic_tokens
 
     def untokenize_abstract(self, whole_tokens):
