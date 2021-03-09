@@ -221,6 +221,8 @@ class TypePredictor(Model):
 
         self.crf_transition_params = None
 
+
+    @tf.function
     def __call__(self, token_ids, training=True):
         """
         Inference
@@ -234,6 +236,13 @@ class TypePredictor(Model):
         tok_emb = self.tok_emb(token_ids)[0]
         logits = self.text_cnn(tok_emb, training=training)
         return logits
+
+
+    # @tf.function(input_signature=[tf.TensorSpec(shape=[None], dtype=tf.string)])
+    # def call(self, token_ids):
+    #     tok_emb = self.tok_emb(token_ids)[0]
+    #     logits = self.text_cnn(tok_emb, training=training)
+    #     return logits
 
     def loss(self, logits, labels, lengths, class_weights=None, extra_mask=None):
         """
@@ -258,6 +267,7 @@ class TypePredictor(Model):
 
         return loss
 
+    
     def score(self, logits, labels, lengths, scorer=None, extra_mask=None):
         """
         Compute precision, recall and f1 scores using the provided scorer function
@@ -336,11 +346,12 @@ def test_step(model, token_ids, labels, lengths, extra_mask=None, class_weights=
     logits = model(token_ids, training=False)
     loss = model.loss(logits, labels, lengths, class_weights=class_weights, extra_mask=extra_mask)
     p, r, f1, t_k_score = model.score(logits, labels, lengths, scorer=scorer, extra_mask=extra_mask)
+    t_k_score = model.score(logits, labels, lengths, scorer=scorer, extra_mask=extra_mask)
     return loss, p, r, f1, t_k_score
 
 
 def train(model, train_batches, test_batches, epochs, report_every=10, scorer=None, learning_rate=0.001,
-          learning_rate_decay=1., finetune=False, decrease_every=None, lower_bound=1e-5):
+          learning_rate_decay=1., finetune=False, decrease_every=None, lower_bound=1e-5, MODEL_SAVE_PATH="./model"):
     lr = tf.Variable(learning_rate, trainable=False)
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
 
@@ -357,13 +368,14 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
             f1s = []
             top_ks = []
             for ind, batch in enumerate(train_batches):
-                # token_ids, graph_ids, labels, class_weights, lengths = b
                 loss, p, r, f1, t_k_score = train_step_finetune(model=model, optimizer=optimizer, token_ids=batch[0],
                                                                 labels=batch[1],
                                                                 lengths=batch[2],
                                                                 extra_mask=batch[0]['input_mask'] > 0,
                                                                 scorer=scorer,
                                                                 finetune=finetune and e / epochs > 0.6)
+
+
                 if not np.isnan(loss):
                     losses.append(loss.numpy())
                     ps.append(p)
@@ -376,6 +388,7 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
 
                 if not decrease_every is None and ind % decrease_every == 0 and ind > 0 and lr>lower_bound:
                     lr.assign(lr * learning_rate_decay)
+
 
             for ind, batch in enumerate(test_batches):
                 # token_ids, graph_ids, labels, class_weights, lengths = b
@@ -396,6 +409,8 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
             test_f1s.append(float(test_f1))
 
             lr.assign(lr * learning_rate_decay)
+
+            tf.saved_model.save(model, export_dir=MODEL_SAVE_PATH)
 
     except KeyboardInterrupt:
         pass
