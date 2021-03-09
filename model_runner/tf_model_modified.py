@@ -222,7 +222,25 @@ class TypePredictor(Model):
         self.crf_transition_params = None
 
 
-    @tf.function
+    @tf.function(input_signature=[
+        { "input_word_ids": tf.TensorSpec(shape=[None,512], dtype=tf.int32),
+           "input_type_ids": tf.TensorSpec(shape=[None,512], dtype=tf.int32),
+           "input_mask": tf.TensorSpec(shape=[None,512], dtype=tf.int32)}])
+    def call(self, token_ids):
+        """
+        Inference
+        :param token_ids: ids for tokens, shape (?, seq_len)
+        :param prefix_ids: ids for prefixes, shape (?, seq_len)
+        :param suffix_ids: ids for suffixes, shape (?, seq_len)
+        :param graph_ids: ids for graph nodes, shape (?, seq_len)
+        :param training: whether to finetune embeddings
+        :return: logits for token classes, shape (?, seq_len, num_classes)
+        """
+        tok_emb = self.tok_emb(token_ids)[0]
+        logits = self.text_cnn(tok_emb, training=False)
+        return logits
+
+
     def __call__(self, token_ids, training=True):
         """
         Inference
@@ -389,7 +407,8 @@ def train(model, train_batches, test_batches, epochs, report_every=10, scorer=No
                 if not decrease_every is None and ind % decrease_every == 0 and ind > 0 and lr>lower_bound:
                     lr.assign(lr * learning_rate_decay)
 
-
+                if ind % 10 == 0: 
+                    tf.saved_model.save(model, export_dir=MODEL_SAVE_PATH)
             for ind, batch in enumerate(test_batches):
                 # token_ids, graph_ids, labels, class_weights, lengths = b
                 test_loss, test_p, test_r, test_f1, test_top_ks = test_step(model=model, token_ids=batch[0],

@@ -3,7 +3,7 @@ import tf_model_modified as tf_model
 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
-import numpy as np
+import joblib
 import tensorflow as tf
 from sklearn.metrics import precision_recall_fscore_support
 from official.nlp import bert
@@ -34,8 +34,8 @@ with open(MODEL_PATH + "/cubert_config.json") as conf_file:
 bert_encoder = bert.bert_models.get_transformer_encoder(
     bert_config, sequence_length=SEQ_LENGTH)
 bert_encoder.trainable = False
-checkpoint = tf.train.Checkpoint(encoder=bert_encoder)
-checkpoint.restore(MODEL_PATH + '/bert2_2-1').assert_consumed()
+checkpoint = tf.train.Checkpoint(model=bert_encoder)
+checkpoint.restore(MODEL_PATH + '/bert1-1').assert_consumed()
 
 data = pd.read_csv(DS_PATH)
 
@@ -59,6 +59,8 @@ enc.fit(all_types)
 np.save('classes.npy', enc.classes_)
 FREQ_CUT_ENC = enc.transform([FREQ_CUT_SYMBOL])
 NaN_enc = enc.transform([NaN_symbol])
+print(enc.inverse_transform(NaN_enc), enc.inverse_transform(FREQ_CUT_ENC))
+joblib.dump(enc, 'le.joblib')
 print(f'Enc for "NaN" {NaN_enc}, Enc for FREQ_CUT_SYMBOL {FREQ_CUT_ENC}')
 df3 = df_labels.apply(enc.transform)
 data['labels'] = df3.values.tolist()
@@ -141,7 +143,7 @@ train_dataset = create_dataset(train_ds)
 test_dataset = create_dataset(test_ds)
 train_dataset = train_dataset.batch(BATCH_SIZE)
 test_dataset = test_dataset.batch(BATCH_SIZE)
-train_dataset = train_dataset.shuffle(shuffle_buffer_size)
+# train_dataset = train_dataset.shuffle(shuffle_buffer_size)
 N_CLASSES = len(enc.classes_)
 
 model = tf_model.TypePredictor(bert_encoder, num_classes=N_CLASSES)

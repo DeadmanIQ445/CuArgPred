@@ -2,7 +2,7 @@ import os
 import tf_model_modified as tf_model
 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-
+import ast
 import tensorflow as tf
 from sklearn.metrics import precision_recall_fscore_support
 from official.nlp import bert
@@ -45,12 +45,11 @@ subword_tokenizer = text_encoder.SubwordTextEncoder(MODEL_PATH + "/cuvocab.txt")
 CLS = subword_tokenizer.encode_without_tokenizing("[CLS]")
 SEP = subword_tokenizer.encode_without_tokenizing("[SEP]")
 
-
 enc = preprocessing.LabelEncoder()
-enc.classes_ = np.load('classes.npy')
-
+enc.classes_ = np.load('classes.npy', allow_pickle=True)
 FREQ_CUT_ENC = enc.transform([FREQ_CUT_SYMBOL])
 NaN_enc = enc.transform([NaN_symbol])
+
 print(f'Enc for "NaN" {NaN_enc}, Enc for FREQ_CUT_SYMBOL {FREQ_CUT_ENC}')
 
 # Dataset generator setup
@@ -63,43 +62,46 @@ def transform(code_text, labels):
     return CLS + code_encoded, [0] + respective_labels
 
 
+def get_names(src):
+    ret = []
+    try:
+        for node in ast.walk(ast.parse(src)):
+            if isinstance(node, ast.arg):
+                ret.append(node.arg)
+        return ret
+    except:
+        print("Could Not process the code")
+        return ret
 
-def process_elem(data_batch_i):
-    labels = dict(zip(eval(data_batch_i['arg_names']), data_batch_i['labels']))
-    line_encoded, id_list = transform(data_batch_i['body'], labels)
+def process_elem(code):
+    args = get_names(code)
+    labels = dict(zip(args, [1]*len(args)))
+    line_encoded, id_list = transform(code, labels)
     sentence_line = line_encoded[:SEQ_LENGTH - 1] + SEP
     le = len(sentence_line)
     sentence_line = np.array(sentence_line + [0]*(SEQ_LENGTH-len(sentence_line)))
     id_list = np.array(id_list[:SEQ_LENGTH - 1] + [0]*(SEQ_LENGTH-le+1))
     return sentence_line, id_list, le
 
-def create_dataset(dataset):
-    def gen():
-        for _,data_batch in dataset.iterrows():
-            full_sentence, ids, le = process_elem(data_batch)
-            full_sentence = tf.ragged.constant(full_sentence)
-            ids = tf.ragged.constant(ids)
-            yield ({'input_word_ids': full_sentence,
-                    'input_mask': ids > 0,
-                    'input_type_ids': tf.zeros_like(full_sentence),
-                    }, ids, le)
+def gen(code):
+    full_sentence, ids, le = process_elem(code)
+    full_sentence = tf.ragged.constant(full_sentence)
+    ids = tf.ragged.constant(ids)
+    return ({'input_word_ids': tf.cast(tf.reshape(full_sentence,[1, SEQ_LENGTH]), dtype=tf.int32),
+            'input_mask': tf.cast(tf.reshape(ids > 0,[1, SEQ_LENGTH]),dtype=tf.int32),
+            'input_type_ids': tf.cast(tf.reshape(tf.zeros_like(full_sentence),[1, SEQ_LENGTH]),dtype=tf.int32),
+            }, ids, le)
 
-    return tf.data.Dataset.from_generator(
-        gen,
-        ({"input_word_ids": tf.int32, "input_mask": tf.int32, "input_type_ids": tf.int32}, tf.int32, tf.int32),
-        (
-            {
-                "input_word_ids": tf.TensorShape([SEQ_LENGTH]),
-                "input_mask": tf.TensorShape([SEQ_LENGTH]),
-                "input_type_ids": tf.TensorShape([SEQ_LENGTH])
-            },
-            tf.TensorShape([SEQ_LENGTH]),
-            None
-        ),
-    )
-
-
+def predict(code):
+    encoded = gen(code)
+    logits = model.call(encoded[0])
+    mask = tf.sequence_mask(encoded[2], SEQ_LENGTH)
+    mask = tf.math.logical_and(mask, encoded[0]['input_mask']>0)
+    masked_pred = tf.boolean_mask(logits, mask)
+    argmax = tf.math.argmax(logits, axis=-1)
+    estimated_labels = tf.cast(tf.boolean_mask(argmax, mask), tf.int32)
+    print(enc.inverse_transform(estimated_labels.numpy()),  [ enc.inverse_transform(i.numpy()) for i in  tf.nn.top_k(masked_pred, k=5).indices])
 N_CLASSES = len(enc.classes_)
-
+print(predict("def abc(a,b):\n return a+b"))
 # model = tf_model.TypePredictor(bert_encoder, num_classes=N_CLASSES)
-print(tf_model.train(model, train_dataset, test_dataset, epochs=EPOCHS, scorer=precision_recall_fscore_support, learning_rate=0.00001, decrease_every=2000, learning_rate_decay=1.0,report_every=250, lower_bound = 1.5e-5))
+# print(tf_model.train(model, train_dataset, test_dataset, epochs=EPOCHS, scorer=precision_recall_fscore_support, learning_rate=0.00001, decrease_every=2000, learning_rate_decay=1.0,report_every=250, lower_bound = 1.5e-5))
